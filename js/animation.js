@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // --- Configuration (Should match Python script outputs) ---
-    const baseImageDir = 'assets/images/__RGB_webp/'; // Correct path for base images
-    const overlayImageDir = 'assets/images/_transparent_overlaid_tracks_only/'; // Correct path for overlays
+    const baseImageDir = 'assets/images/rgb_frames/'; // Correct path for base images
+    const overlayImageDir = 'assets/images/overlay_frames/'; // Correct path for overlays
     const imageFormat = 'webp';
     const framePadding = 6; // Number of digits for frame number (e.g., 000001)
     const maxFrame = 1000; // Restore max frame
