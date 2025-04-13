@@ -1,110 +1,190 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // --- Configuration (Should match Python script outputs) ---
-    const baseImageDir = 'assets/images/rgb_frames/'; // Correct path for base images
-    const overlayImageDir = 'assets/images/overlay_frames/'; // Correct path for overlays
-    const imageFormat = 'webp';
-    const framePadding = 6; // Number of digits for frame number (e.g., 000001)
-    const maxFrame = 1000; // Restore max frame
-    const minFrame = 1;
-    // Decrease value for faster animation (e.g., 50ms = 20 FPS)
-    const animationSpeed = 50; // Restore animation speed (ms per frame)
+    // --- Configuration ---
+    const config = {
+        baseImageDir: 'assets/images/rgb_frames/',
+        overlayImageDir: 'assets/images/overlay_frames/',
+        imageFormat: 'webp',
+        framePadding: 6,
+        totalFramesToLoad: 100,  // We'll only load 100 frames
+        minFrame: 1,
+        animationSpeed: 50,
+    };
 
     // --- Get DOM Elements ---
-    const imageContainer = document.getElementById('image-container'); // Get container ref
+    const imageContainer = document.getElementById('image-container');
     const baseImage = document.getElementById('base-image');
     const overlayImage = document.getElementById('overlay-image');
-    const trackToggle = document.getElementById('track-toggle'); // Get the toggle text element
+    const trackToggle = document.getElementById('track-toggle');
+    const loadingStatus = document.getElementById('loading-status');
 
-    // --- State Variables ---
-    let isPlaying = false; // Restore playing state
-    let intervalId = null; // Restore interval ID
-    let currentFrame = minFrame;
-    let isOverlayVisible = true; // Keep overlay state separate
-
-    // --- Function to Format Frame Number ---
-    function formatFrameNumber(frame) {
-        return frame.toString().padStart(framePadding, '0');
+    // Show initial loading state
+    if (loadingStatus) {
+        loadingStatus.style.display = 'block';
+        loadingStatus.textContent = 'Loading frames...';
+    }
+    if (imageContainer) {
+        imageContainer.style.display = 'none'; // Hide container until first frame is ready
     }
 
-    // --- Function to Update Images and Controls ---
+    // --- State Variables ---
+    let isPlaying = false;
+    let animationFrameId = null;
+    let currentFrame = config.minFrame;
+    let isOverlayVisible = true;
+    let lastFrameTime = 0;
+
+    // --- Preloaded Image Cache ---
+    const preloadedBaseImages = [];
+    const preloadedOverlayImages = [];
+
+    function formatFrameNumber(frame) {
+        return frame.toString().padStart(config.framePadding, '0');
+    }
+
     function updateDisplay(frame) {
-        const frameStr = formatFrameNumber(frame);
-        const baseImagePath = `${baseImageDir}${frameStr}.${imageFormat}`;
-        const overlayImagePath = `${overlayImageDir}${frameStr}.${imageFormat}`;
-
-        // Set base image source - diagnostics will run on load
-        baseImage.src = baseImagePath;
-
-        // Set overlay image source
-        if (isOverlayVisible) {
-            overlayImage.src = overlayImagePath;
+        // Convert the current frame number to an index in our preloaded arrays
+        const frameIndex = (frame - config.minFrame) % config.totalFramesToLoad;
+        
+        if (preloadedBaseImages[frameIndex] && preloadedBaseImages[frameIndex].complete) {
+            baseImage.src = preloadedBaseImages[frameIndex].src;
         } else {
-            overlayImage.src = overlayImagePath;
+            console.warn(`Base image for frame index ${frameIndex} not ready`);
+        }
+
+        if (isOverlayVisible) {
+            if (preloadedOverlayImages[frameIndex] && preloadedOverlayImages[frameIndex].complete) {
+                overlayImage.src = preloadedOverlayImages[frameIndex].src;
+                overlayImage.classList.remove('hidden');
+            } else {
+                console.warn(`Overlay image for frame index ${frameIndex} not ready`);
+                overlayImage.classList.add('hidden');
+            }
+        } else {
+            overlayImage.classList.add('hidden');
         }
     }
 
-    // --- Animation Functions ---
+    function animationLoop(timestamp) {
+        if (!isPlaying) return;
+
+        const elapsed = timestamp - lastFrameTime;
+
+        if (elapsed >= config.animationSpeed) {
+            lastFrameTime = timestamp - (elapsed % config.animationSpeed);
+
+            currentFrame++;
+            // Loop back to start after reaching totalFramesToLoad
+            if (currentFrame > (config.minFrame + config.totalFramesToLoad - 1)) {
+                currentFrame = config.minFrame;
+            }
+            updateDisplay(currentFrame);
+        }
+
+        animationFrameId = requestAnimationFrame(animationLoop);
+    }
+
     function playAnimation() {
         if (isPlaying) return;
         isPlaying = true;
-        // No button text to update
-
-        intervalId = setInterval(() => {
-            currentFrame++;
-            if (currentFrame > maxFrame) {
-                currentFrame = minFrame; // Loop
-            }
-            updateDisplay(currentFrame);
-        }, animationSpeed);
+        lastFrameTime = performance.now();
+        animationFrameId = requestAnimationFrame(animationLoop);
         console.log("Animation started");
     }
 
     function pauseAnimation() {
         if (!isPlaying) return;
         isPlaying = false;
-        // No button text to update
-        clearInterval(intervalId);
-        intervalId = null;
+        if (animationFrameId) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
         console.log("Animation paused");
     }
 
-    // --- Event Listener for Track Toggle Text ---
     trackToggle.addEventListener('click', () => {
         isOverlayVisible = !isOverlayVisible;
         if (isOverlayVisible) {
-            overlayImage.classList.remove('hidden');
             trackToggle.textContent = 'Hide Tracks';
+            updateDisplay(currentFrame);
         } else {
             overlayImage.classList.add('hidden');
             trackToggle.textContent = 'Show Tracks';
         }
     });
 
-    // --- Event Listener for Slider Interaction ---
-    // frameSlider.addEventListener('input', (event) => {
-    //     pauseAnimation();
-    //     currentFrame = parseInt(event.target.value, 10);
-    //     updateDisplay(currentFrame);
-    // });
+    function preloadImages() {
+        let loadedCount = 0;
+        const totalImages = config.totalFramesToLoad * 2; // Base + Overlay
 
-    // --- Initial Image Load & Diagnostics ---
-    // Add onload listener to the base image
-    baseImage.onload = () => {
-        // Start animation only AFTER the first image is loaded
-        playAnimation();
-    };
-    baseImage.onerror = () => {
-        console.error("ERROR: Base image failed to load!");
+        console.log(`Starting preload of ${totalImages} images...`);
+        if (loadingStatus) {
+            loadingStatus.textContent = `Loading: 0 / ${totalImages}`;
+        }
+
+        // Only load the first config.totalFramesToLoad frames
+        for (let i = 0; i < config.totalFramesToLoad; i++) {
+            const frameNumber = config.minFrame + i;
+            const frameStr = formatFrameNumber(frameNumber);
+
+            // Preload Base Image
+            preloadedBaseImages[i] = new Image();
+            preloadedBaseImages[i].onload = imageLoaded;
+            preloadedBaseImages[i].onerror = imageError;
+            preloadedBaseImages[i].src = `${config.baseImageDir}${frameStr}.${config.imageFormat}`;
+
+            // Preload Overlay Image
+            preloadedOverlayImages[i] = new Image();
+            preloadedOverlayImages[i].onload = imageLoaded;
+            preloadedOverlayImages[i].onerror = imageError;
+            preloadedOverlayImages[i].src = `${config.overlayImageDir}${frameStr}.${config.imageFormat}`;
+        }
+
+        function imageLoaded() {
+            loadedCount++;
+            if (loadingStatus && (loadedCount % 10 === 0 || loadedCount === totalImages)) {
+                loadingStatus.textContent = `Loading: ${loadedCount} / ${totalImages}`;
+            }
+            
+            // Show first frame as soon as both its base and overlay are loaded
+            if (loadedCount === 2) { // First base and overlay
+                if (imageContainer) {
+                    imageContainer.style.display = 'block';
+                }
+                updateDisplay(currentFrame);
+            }
+            
+            if (loadedCount === totalImages) {
+                allImagesLoaded();
+            }
+        }
+
+        function imageError() {
+            loadedCount++;
+            console.error(`Failed to load image: ${this.src}`);
+            if (loadedCount === totalImages) {
+                allImagesLoaded();
+            }
+        }
+
+        function allImagesLoaded() {
+            console.log("All frames preloaded!");
+            if (loadingStatus) {
+                loadingStatus.style.display = 'none';
+            }
+            playAnimation();
+        }
     }
-    overlayImage.onerror = () => {
-        console.error("ERROR: Overlay image failed to load!");
+
+    // --- Initial Setup ---
+    console.log("Animation viewer setup initiated");
+    if (isOverlayVisible) {
+        overlayImage.classList.remove('hidden');
+        trackToggle.textContent = 'Hide Tracks';
+    } else {
+        overlayImage.classList.add('hidden');
+        trackToggle.textContent = 'Show Tracks';
     }
-
-    // Trigger the initial load
-    updateDisplay(currentFrame);
-
-    // Note: Animation now starts in the baseImage.onload handler
-
-    // Update initial console message
-    console.log(`Animation viewer setup initiated. Waiting for frame ${currentFrame} to load...`);
+    
+    // Start preloading
+    preloadImages();
 }); 
